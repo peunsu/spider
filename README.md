@@ -1,8 +1,11 @@
-<h1 align="center">🕸️ SPIDER: Scalable Physics-Informed DExterous Retargeting</h1>
+<div align="center">
+
+# 🕸️ SPIDER: Scalable Physics-Informed DExterous Retargeting
 
 <p align="center">
+
   <a href="https://creativecommons.org/licenses/by-nc/4.0/">
-      <img src="https://img.shields.io/badge/License-CC_BY--NC_4.0-lightgrey.svg" alt="License: CC BY-NC 4.0">
+    <img src="https://img.shields.io/badge/License-CC_BY--NC_4.0-lightgrey.svg" alt="License: CC BY-NC 4.0">
   </a>
   <a href="https://www.python.org/downloads/">
     <img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+">
@@ -10,18 +13,23 @@
   <a href="https://pytorch.org/">
     <img src="https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg" alt="PyTorch">
   </a>
-  <a href="http://arxiv.org/abs/2511.09484">
+  <a href="https://arxiv.org/abs/2511.09484">
     <img src="https://img.shields.io/badge/arXiv-2406.12345-b31b1b.svg" alt="arXiv">
   </a>
-  <a href="https://facebookresearch.github.io/spider/">
-    <img src="https://img.shields.io/badge/docs-latest-blue.svg" alt="Documentation">
-  </a>
-  <a href="https://jc-bao.github.io/spider-project/">
-    <img src="https://img.shields.io/badge/website-project-blue.svg" alt="Project Website">
-  </a>
+
+</p>
+
+<p align="center">
+
+  <a href="https://jc-bao.github.io/spider-project/"><b>Project Website</b></a> •
+  <a href="https://facebookresearch.github.io/spider/"><b>Documentation</b></a> •
+  <a href="https://huggingface.co/datasets/retarget/retarget_example"><b>Dataset</b></a>
+
 </p>
 
 ![logo](figs/teaser.png)
+
+</div>
 
 ## Overview
 
@@ -54,9 +62,9 @@ This code base provides the following pipeline from human video to robot actions
 
 ### Multiple simulators support:
 
-| Genesis                      | Mujoco Warp              |
-| ---------------------------- | ------------------------ |
-| ![](figs/sim/dexmachina.gif) | ![](figs/sim/mjwarp.gif) |
+| Genesis                      | Mujoco Warp              | IsaacGym              |
+| ---------------------------- | ------------------------ | ---------------------- |
+| ![](figs/sim/dexmachina.gif) | ![](figs/sim/mjwarp.gif) | ![](figs/sim/maniptrans.gif) |
 
 ### Deployment to real-world robots:
 
@@ -144,8 +152,11 @@ SPIDER is designed to support multiple workflows depending on your simulator of 
 - Native Mujoco Wrap (MJWP) is the default workflow and supports dexterous hand and humanoid robot retargeting.
 - We also support [Genesis](https://genesis.github.io/) simulator with [DexMachina](https://github.com/MandiZhao/dexmachina), workflow is useful for further training a policy with RL for dexterous hand.
 - [HDMI](https://github.com/lecar-lab/hdmi) workflow supports humanoid robot retargeting + RL workflow with humanoid-object interaction tasks. It use [MjLab](https://github.com/mujocolab/mjlab) as its backend simulator.
+- [ManipTrans](https://github.com/ManipTrans/ManipTrans) workflow supports dexterous hand retargeting with IsaacGym.
 
 ### Native Mujoco Wrap Workflow
+
+Please refer to [Native Mujoco Wrap workflow](docs/workflows/workflow-mjwp.md) for details.
 
 - supports dexterous hand and humanoid robot retargeting
 
@@ -182,6 +193,8 @@ uv run spider/postprocess/read_to_robot.py --task=${TASK} --dataset-name=${DATAS
 
 ### DexMachina Workflow
 
+Please refer to [DexMachina workflow](docs/workflows/workflow-dexmachina.md) for details.
+
 ```bash
 # install dexmachina conda environment following their official instructions: https://mandizhao.github.io/dexmachina-docs/0_install.html
 conda activate dexmachina
@@ -193,12 +206,26 @@ python examples/run_dexmachina.py
 
 ### HDMI Workflow
 
+Please refer to [HDMI workflow](docs/workflows/workflow-hdmi.md) for details.
+
 ```bash
 # install HDMI uv environment following their official instructions:
 # go to hdmi folder, install SPIDER with
 uv pip install --no-deps -e ../spider
 ```
 
+### ManipTrans Workflow
+
+Please refer to [ManipTrans workflow](docs/workflows/workflow-maniptrans.md) for details.
+
+```bash
+# install maniptrans conda environment following their official instructions: https://github.com/ManipTrans/ManipTrans
+conda activate maniptrans
+# note: install spider only without mujoco warp since we only use the optimization part
+pip install --ignore-requires-python --no-deps -e .
+# run retargeting
+python examples/run_maniptrans.py
+```
 
 ## Remote Development
 

@@ -52,8 +52,11 @@ def _sample_ctrls_impl(
     return ctrls_samples
 
 
-# Compiled version
-_sample_ctrls_compiled = torch.compile(_sample_ctrls_impl)
+# Compiled version (torch.compile requires PyTorch 2.0+)
+if hasattr(torch, "compile"):
+    _sample_ctrls_compiled = torch.compile(_sample_ctrls_impl)
+else:
+    _sample_ctrls_compiled = _sample_ctrls_impl
 
 
 def sample_ctrls(
@@ -234,8 +237,11 @@ def _compute_weights_impl(
     return weights, nan_mask
 
 
-# Compiled version
-_compute_weights_compiled = torch.compile(_compute_weights_impl)
+# Compiled version (torch.compile requires PyTorch 2.0+)
+if hasattr(torch, "compile"):
+    _compute_weights_compiled = torch.compile(_compute_weights_impl)
+else:
+    _compute_weights_compiled = _compute_weights_impl
 
 
 def make_optimize_once_fn(

@@ -10,6 +10,8 @@ Author: Chaoyi Pan
 Date: 2025-08-10
 """
 
+from __future__ import annotations
+
 import json
 import os
 import random
