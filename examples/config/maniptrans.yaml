@@ -1,0 +1,62 @@
+# Configuration for ManipTrans (IsaacGym) dynamics retargeting pipeline
+defaults:
+  - _self_
+
+# Dataset configuration
+dataset_dir: "example_datasets"
+dataset_name: "maniptrans"
+robot_type: "inspire"  # "inspire", "shadow", "allegro", "xhand"
+embodiment_type: "left"  # "right", "left", "bimanual"
+task: "0f900@0"  # HO-Tracker data index used as task name (format: sequence_id@sub_id)
+data_id: 0
+seed: 0
+viewer: "none" # "isaac" for isaac gym native viewer
+rerun_spawn: false
+device: "cuda:0"
+
+# Simulation and control parameters
+simulator: maniptrans
+sim_dt: 0.0166667  # 1/60 second (IsaacGym default)
+ctrl_dt: 0.2  # Control timestep (how often MPC updates)
+knot_dt: 0.2  # Knot point spacing
+ref_dt: 0.0166667  # Reference trajectory timestep
+render_dt: 0.0166667  # Same as sim_dt
+trace_dt: 0.0166667  # Must be divisible by sim_dt
+horizon: 0.6  # MPC horizon in seconds
+show_viewer: false
+save_video: true
+save_info: true
+max_sim_steps: -1  # -1 means use full trajectory length
+nu: 18  # 6 (wrist force/torque) + 12 (inspire DOFs), overridden by env
+
+# MPC optimization parameters
+max_num_iterations: 32  # Number of iterations per MPC step
+num_samples: 1024  # Number of parallel samples for CEM
+last_ctrl_noise_scale: 1.0
+first_ctrl_noise_scale: 0.5
+final_noise_scale: 0.1
+# this part is handled by base controller in maniptrans
+pos_noise_scale: 0.0
+rot_noise_scale: 0.0
+joint_noise_scale: 1.0
+improvement_threshold: 0.001
+improvement_check_steps: 4
+terminal_rew_scale: 10.0
+temperature: 1.0
+
+# Domain randomization (not used for ManipTrans evaluation)
+num_dr: 1
+
+# ManipTrans-specific parameters (maniptrans_data_indices derived from task name)
+maniptrans_episode_length: 1200
+maniptrans_tighten_method: "None"  # No curriculum tightening for MPC
+maniptrans_tighten_factor: 1.0
+maniptrans_tighten_steps: 3200
+maniptrans_actions_moving_average: 0.4
+maniptrans_use_pid: false
+maniptrans_use_quat_rot: false
+maniptrans_ctrl_freq_inv: 1
+maniptrans_record_video: false  # Record video after MPC (replay with 2-env camera)
+
+# Output configuration (empty = use standard path under dataset_dir)
+output_dir: ""

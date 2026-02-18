@@ -10,6 +10,8 @@ Author: Chaoyi Pan
 Date: 2025-08-10
 """
 
+from __future__ import annotations
+
 import json
 import os
 import random
@@ -124,6 +126,8 @@ class Config:
     joint_noise_scale: float = 0.15
     pos_noise_scale: float = 0.03
     rot_noise_scale: float = 0.03
+    # Reward mode
+    use_rl_reward: bool = False  # use dexmachina RL training reward formulation
     # Reward scaling
     base_pos_rew_scale: float = 1.0
     base_rot_rew_scale: float = 0.3

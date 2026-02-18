@@ -13,10 +13,14 @@ and robust.
 
 from __future__ import annotations
 
+import os
+import sys
+
 # Import genesis and dexmachina related modules
 import genesis as gs
 import loguru
 import torch
+from dexmachina.asset_utils import get_asset_path
 from dexmachina.envs.base_env import BaseEnv
 from dexmachina.envs.constructors import (
     get_all_env_cfg,
@@ -31,6 +35,76 @@ from dexmachina.envs.reward_utils import (
 )
 
 from spider.config import Config
+
+
+def _check_dexmachina_data(hand_name: str, obj_name: str, use_clip: str, subject_name: str = "s01") -> None:
+    """Check that required DexMachina retargeted data exists and print hints if missing."""
+    clip_tag = f"{obj_name}_use_{use_clip}"
+    missing = []
+
+    # Check retargeted kinematics (.pt or .npy)
+    retarget_dir = get_asset_path(f"retargeted/{hand_name}/{subject_name}")
+    pt_path = os.path.join(str(retarget_dir), f"{clip_tag}_vector_para.pt")
+    npy_path = os.path.join(str(retarget_dir), f"{clip_tag}_vector_para.npy")
+    if not os.path.exists(pt_path) and not os.path.exists(npy_path):
+        missing.append(("retargeted kinematics", pt_path))
+
+    # Check contact retarget data
+    contact_dir = get_asset_path(f"contact_retarget/{hand_name}/{subject_name}")
+    contact_path = os.path.join(str(contact_dir), f"{clip_tag}.npy")
+    if not os.path.exists(contact_path):
+        missing.append(("contact retarget", contact_path))
+
+    if not missing:
+        return
+
+    assets_root = str(get_asset_path(""))
+    spider_data = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "example_datasets", "raw", "dexmachina",
+    )
+
+    msg_lines = [
+        "",
+        "=" * 72,
+        "  DexMachina data not found for "
+        f"hand={hand_name}, clip={obj_name}_use_{use_clip}",
+        "=" * 72,
+        "",
+        "Missing files:",
+    ]
+    for label, path in missing:
+        msg_lines.append(f"  - [{label}] {path}")
+
+    msg_lines += [
+        "",
+        "Pre-generated data for inspire_hand is stored in SPIDER at:",
+        f"  {spider_data}/",
+        "",
+        "To fix this, copy the data into the DexMachina assets directory:",
+        "",
+        f"  cp -r {spider_data}/retargeted/{hand_name}/ \\",
+        f"        {assets_root}/retargeted/{hand_name}/",
+        "",
+        f"  cp -r {spider_data}/contact_retarget/{hand_name}/ \\",
+        f"        {assets_root}/contact_retarget/{hand_name}/",
+        "",
+        f"  cp -r {spider_data}/retargeter_results/{hand_name}/ \\",
+        f"        {assets_root}/retargeter_results/{hand_name}/",
+        "",
+        "Available clips in spider/example_datasets/raw/dexmachina/:",
+        "  inspire_hand/s01: box_use_01, ketchup_use_01, ketchup_use_02,",
+        "                    laptop_use_01, mixer_use_01, notebook_use_01,",
+        "                    waffleiron_use_01",
+        "",
+        "Or regenerate the data yourself (see DexMachina docs):",
+        "  python dexmachina/retargeting/parallel_retarget.py --hand <hand>",
+        "  python dexmachina/retargeting/map_contacts.py --hand <hand>",
+        "=" * 72,
+        "",
+    ]
+    loguru.logger.error("\n".join(msg_lines))
+    sys.exit(1)
 
 # Initialize Genesis once per process
 try:
@@ -70,20 +144,38 @@ def setup_env(config: Config, ref_data: tuple[torch.Tensor, ...]) -> BaseEnv:
     args.kp_init = 0.0
     args.kv_init = 0.0
 
+    # When using RL reward, match RL training flags
+    if getattr(config, "use_rl_reward", False):
+        args.group_collisions = True
+        args.use_retarget_contact = True
+        args.observe_contact_force = True
+
     # --- Environment Configuration ---
     # Simplified environment configuration, focusing on core components
     obj_name, start, end, subject_name, use_clip = parse_clip_string(args.clip)
     args.arctic_object = obj_name
     args.frame_start = start
     args.frame_end = end
+
+    # Validate that required DexMachina data files exist before building env
+    _check_dexmachina_data(args.hand, obj_name, use_clip, subject_name)
+
     env_kwargs = get_all_env_cfg(args, device=str(config.device))
 
     # Reward setup
-    env_kwargs["reward_cfg"]["bc_rew_weight"] = 0.0
-    # Set imitation and contact reward weights to enable loading demo data
-    # These will be overridden by config parameters in get_reward()
-    imi_rew_weight = getattr(config, "imi_rew_weight", 0.1)
-    contact_rew_weight = getattr(config, "contact_rew_weight", 1.0)
+    if getattr(config, "use_rl_reward", False):
+        # Use RL training defaults: imi=0.3, contact=3.0, bc=0.3
+        imi_rew_weight = getattr(config, "imi_rew_weight", 0.3)
+        contact_rew_weight = getattr(config, "contact_rew_weight", 3.0)
+        env_kwargs["reward_cfg"]["bc_rew_weight"] = getattr(
+            config, "bc_rew_weight", 0.3
+        )
+    else:
+        env_kwargs["reward_cfg"]["bc_rew_weight"] = 0.0
+        # Set imitation and contact reward weights to enable loading demo data
+        # These will be overridden by config parameters in get_reward()
+        imi_rew_weight = getattr(config, "imi_rew_weight", 0.1)
+        contact_rew_weight = getattr(config, "contact_rew_weight", 1.0)
     env_kwargs["reward_cfg"]["imi_rew_weight"] = imi_rew_weight
     env_kwargs["reward_cfg"]["contact_rew_weight"] = contact_rew_weight
     # Enable contact tracking if contact rewards are used
@@ -121,7 +213,8 @@ def get_obj_arti_dist(env: BaseEnv) -> torch.Tensor:
         env.objects[env.object_names[0]].dof_idxs
     )
     demo_arti = env.reward_module.match_demo_state("obj_arti", env.episode_length_buf)
-    obj_arti_dist = position_distance(demo_arti, obj_arti)
+    # obj_arti is (B, 1), demo_arti is (B,) -- squeeze to avoid broadcast to (B, B)
+    obj_arti_dist = position_distance(demo_arti.unsqueeze(-1), obj_arti)
     return obj_arti_dist
 
 
@@ -378,8 +471,8 @@ def get_contact_reward(
     demo_quat = env.reward_module.match_demo_state("obj_quat", env.episode_length_buf)
     demo_obj_pose = torch.cat([demo_pos, demo_quat], dim=1)
 
-    # Split contact data into left and right hands
-    num_left_links = len(env.robots["left"].kpt_link_idxs)
+    # Split contact data into left and right hands using collision link count
+    num_left_links = env.num_left_contact_links
     contact_link_pos_left = env.contact_link_pos[:, :, :num_left_links]
     contact_link_valid_left = env.contact_link_valid[:, :, :num_left_links]
     contact_link_pos_right = env.contact_link_pos[:, :, num_left_links:]
@@ -435,6 +528,85 @@ def get_contact_reward(
     return contact_rew
 
 
+def get_rl_reward(
+    config: Config,
+    env: BaseEnv,
+    ref: tuple[torch.Tensor, ...],
+) -> tuple[torch.Tensor, dict]:
+    """Reward matching the dexmachina RL training formulation.
+
+    Delegates to env.reward_module.compute_reward() so the reward is identical
+    to what the RL policy was trained with.  The reward_module is configured at
+    env construction time (see setup_env) with RL-matching defaults when
+    config.use_rl_reward is True.
+    """
+    obj_pos = env.objects[env.object_names[0]].entity.get_pos()
+    obj_quat = env.objects[env.object_names[0]].entity.get_quat()
+    obj_arti = env.objects[env.object_names[0]].entity.get_dofs_position(
+        env.objects[env.object_names[0]].dof_idxs
+    )
+
+    # BC distance: joint position tracking error vs demo
+    bc_dist = torch.cat(
+        [robot.get_bc_dist() for robot in env.robots.values()], dim=-1
+    )
+
+    # Contact data
+    num_left_links = env.num_left_contact_links
+    contact_link_pos_left = None
+    contact_link_valid_left = None
+    contact_link_pos_right = None
+    contact_link_valid_right = None
+    if getattr(env, "use_contact_reward", False) and hasattr(env, "contact_link_pos"):
+        contact_link_pos_left = env.contact_link_pos[:, :, :num_left_links]
+        contact_link_valid_left = env.contact_link_valid[:, :, :num_left_links]
+        contact_link_pos_right = env.contact_link_pos[:, :, num_left_links:]
+        contact_link_valid_right = env.contact_link_valid[:, :, num_left_links:]
+
+    # Contact forces for force penalty
+    contact_forces = (
+        env.contact_forces if hasattr(env, "contact_forces") else None
+    )
+
+    reward_kwargs = dict(
+        actions=torch.zeros(env.num_envs, env.num_actions, device=env.device),
+        bc_dist=bc_dist,
+        obj_pos=obj_pos,
+        obj_quat=obj_quat,
+        obj_arti=obj_arti,
+        kpts_left=env.robots["left"].kpt_pos,
+        kpts_right=env.robots["right"].kpt_pos,
+        wrist_pose_left=env.robots["left"].wrist_pose,
+        wrist_pose_right=env.robots["right"].wrist_pose,
+        episode_length_buf=env.episode_length_buf,
+        contact_link_pos_left=contact_link_pos_left,
+        contact_link_valid_left=contact_link_valid_left,
+        contact_link_pos_right=contact_link_pos_right,
+        contact_link_valid_right=contact_link_valid_right,
+        contact_forces=contact_forces,
+    )
+
+    reward, rew_dict = env.reward_module.compute_reward(**reward_kwargs)
+
+    # Build info dict compatible with the optimizer pipeline.
+    # Always include obj tracking distances for logging in the main loop.
+    obj_pos_dist = get_obj_pos_dist(env)
+    obj_quat_dist = get_obj_quat_dist(env)
+    obj_arti_dist = get_obj_arti_dist(env)
+
+    info = {
+        "obj_pos_dist": obj_pos_dist,
+        "obj_quat_dist": obj_quat_dist,
+        "obj_arti_dist": obj_arti_dist,
+    }
+    # Forward scalar reward components from the RL reward dict
+    for k, v in rew_dict.items():
+        if isinstance(v, torch.Tensor) and v.dtype != torch.bool and v.dim() <= 1:
+            info[k] = v
+
+    return reward, info
+
+
 def get_reward(
     config: Config,
     env: BaseEnv,
@@ -444,6 +616,9 @@ def get_reward(
     ref is a tuple (placeholder for compatibility)
     Returns (N,)
     """
+    if getattr(config, "use_rl_reward", False):
+        return get_rl_reward(config, env, ref)
+
     obj_pos_dist = get_obj_pos_dist(env)
     obj_quat_dist = get_obj_quat_dist(env)
     obj_dist = (obj_pos_dist + obj_quat_dist) / 2.0
@@ -518,7 +693,30 @@ def get_reward(
 def get_terminate(
     config: Config, env: BaseEnv, ref_slice: tuple[torch.Tensor, ...]
 ) -> torch.Tensor:
-    return torch.zeros(env.num_envs, device=env.device)
+    """Detect terminated samples using object tracking error and env health checks.
+
+    Mirrors the termination logic from dexmachina BaseEnv._get_dones():
+    - Object position/rotation diverged beyond thresholds
+    - Object fell off the table
+    - NaN environments
+    """
+    # Object tracking error vs reference demo
+    obj_pos_dist = get_obj_pos_dist(env)
+    obj_quat_dist = get_obj_quat_dist(env)
+    terminate = (obj_pos_dist > config.object_pos_threshold) | (
+        obj_quat_dist > config.object_rot_threshold
+    )
+
+    # Object fell off the table
+    obj_pos = env.objects[env.object_names[0]].entity.get_pos()
+    object_fell_off = obj_pos[:, 2] < env.table_height
+    terminate = terminate | object_fell_off
+
+    # NaN environments
+    if hasattr(env, "nan_envs"):
+        terminate = terminate | env.nan_envs
+
+    return terminate
 
 
 def get_terminal_reward(
