@@ -1,17 +1,21 @@
 # @package _global_
-task: lift_board
+dataset_name: fair_fre
+task: pick_up
 robot_type: xhand
-embodiment_type: bimanual
-data_id: 0
+embodiment_type: right
+data_id: 4
 temperature: 1.0
 num_samples: 1024
 ctrl_dt: 1.5
 knot_dt: 1.0
 horizon: 3.0
+ref_dt: 0.02
 first_ctrl_noise_scale: 2.0
 last_ctrl_noise_scale: 4.0
 improvement_threshold: 0.01
-improvement_check_steps: 2
+improvement_check_steps: 3
+terminal_rew_scale: 10.0
+pos_rew_scale: 1.0
 max_num_iterations: 16
 base_pos_rew_scale: 0.1
 base_rot_rew_scale: 0.03

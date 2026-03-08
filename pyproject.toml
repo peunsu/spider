@@ -29,6 +29,7 @@ dependencies = [
   "huggingface_hub",
   "gspread",
   "google-auth",
+  "mink",
 ]
 
 [project.scripts]
