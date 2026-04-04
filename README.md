@@ -163,7 +163,7 @@ Please refer to [Native Mujoco Wrap workflow](docs/workflows/workflow-mjwp.md) f
 ```bash
 TASK=p36-tea
 HAND_TYPE=bimanual
-DATA_ID=10
+DATA_ID=0
 ROBOT_TYPE=xhand
 DATASET_NAME=gigahand
 
@@ -189,7 +189,9 @@ uv run spider/preprocess/generate_xml.py --task=${TASK} --dataset-name=${DATASET
 uv run spider/preprocess/ik_fast.py --task=${TASK} --dataset-name=${DATASET_NAME} --data-id=${DATA_ID} --embodiment-type=${HAND_TYPE} --robot-type=${ROBOT_TYPE}
 
 # retargeting
-uv run examples/run_mjwp.py +override=${DATASET_NAME} task=${TASK} data_id=${DATA_ID} robot_type=${ROBOT_TYPE} embodiment_type=${HAND_TYPE}
+# here we use fast retargeting pipeline
+# original paper use +override=${DATASET_NAME} which runs a bit slower
+uv run examples/run_mjwp.py +override=${DATASET_NAME}_fast task=${TASK} data_id=${DATA_ID} robot_type=${ROBOT_TYPE} embodiment_type=${HAND_TYPE}
 
 # read data for deployment (optional)
 uv run spider/postprocess/read_to_robot.py --task=${TASK} --dataset-name=${DATASET_NAME} --data-id=${DATA_ID} --robot-type=${ROBOT_TYPE} --embodiment-type=${HAND_TYPE}
