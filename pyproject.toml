@@ -19,7 +19,9 @@ dependencies = [
   "imageio[ffmpeg]",
   "mediapy",
   "opencv-python",
-  "newton[examples] @ git+https://github.com/newton-physics/newton.git",
+  "mujoco==3.5.1.dev880735671",
+  "mujoco-warp @ git+https://github.com/google-deepmind/mujoco_warp@dde89450a160ad0ccd12c6b95ff4ca88ccc723ee",
+  "warp-lang==1.11.0.dev20251120",
   "rerun-sdk==0.26.2",
   "viser",
   "ipdb",
@@ -37,6 +39,20 @@ spider-mjwp = "examples.run_mjwp:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[[tool.uv.index]]
+name = "mujoco-nightly"
+url = "https://py.mujoco.org/"
+explicit = true
+
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com/"
+explicit = true
+
+[tool.uv.sources]
+mujoco = { index = "mujoco-nightly" }
+warp-lang = { index = "nvidia" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["spider"]
