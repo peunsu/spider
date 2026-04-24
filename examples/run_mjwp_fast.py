@@ -165,24 +165,23 @@ def _apply_boost(
 #
 #   OPTIMIZE    succeed                              -> OPTIMIZE
 #               fail, local<cap                      -> LOCAL_RETRY
-#               fail, local>=cap, history            -> REVERT
+#               fail, local>=cap, history            -> REVERT (first)
 #               fail, local>=cap, no history         -> DONE
 #
-#   LOCAL_RETRY (transient) reload curr_cp, boost    -> OPTIMIZE
+#   LOCAL_RETRY (transient) reload curr_cp, boost    -> (unchanged state)
 #
-#   REVERT      (transient) if depth<max: pop+load+boost -> RECOVERING
-#               else                                      -> DONE
+#   REVERT      (first, from OPTIMIZE) pop once, save anchor -> RECOVERING
 #
 #   RECOVERING  succeed, sim_step > anchor           -> OPTIMIZE (full recovery)
 #               succeed, sim_step <= anchor          -> RECOVERING (no push)
 #               fail, local<cap                      -> LOCAL_RETRY
-#               fail, local>=cap, history            -> REVERT (deeper)
-#               fail, local>=cap, no history         -> DONE
+#               fail, local>=cap, attempts<max       -> RE-REVERT (same anchor)
+#               fail, local>=cap, attempts>=max      -> DONE
 #
-# "Recovery anchor" = sim_step right after the latest REVERT pop. Recovery is
-# declared when a step succeeds at sim_step > anchor — i.e., we've advanced
-# past the revert point. This matches the user's rule: revert success is
-# judged by the *next* step after the reverted one, not by the reverted step.
+# "Recovery anchor" = sim_step right after the first REVERT pop. On subsequent
+# failures during recovery, we reload the *same* anchor checkpoint instead of
+# popping deeper into history. Recovery is declared when a step succeeds at
+# sim_step > anchor.
 
 
 class _StepState:
@@ -196,9 +195,10 @@ class _LoopCtx:
     state: str = _StepState.OPTIMIZE
     history: collections.deque = field(default_factory=collections.deque)
     local_retries: int = 0
-    revert_depth: int = 0
     boost_level: int = 0
     revert_anchor_step: int | None = None
+    revert_anchor_checkpoint: dict | None = None
+    revert_attempts_from_anchor: int = 0
 
 
 def main(config: Config):
@@ -218,18 +218,6 @@ def main(config: Config):
 
     qpos_ref, qvel_ref, ctrl_ref, contact, contact_pos = load_data(
         config, config.data_path
-    )
-
-    # Extra padding: repeat final frame so the optimizer sees a full horizon of
-    # "hold position" reference near the end, preventing object drops.
-    extra_pad = config.horizon_steps
-    qpos_ref = torch.cat([qpos_ref, qpos_ref[-1:].expand(extra_pad, -1)], dim=0)
-    qvel_ref = torch.cat([qvel_ref, qvel_ref[-1:].expand(extra_pad, -1)], dim=0)
-    ctrl_ref = torch.cat([ctrl_ref, ctrl_ref[-1:].expand(extra_pad, -1)], dim=0)
-    contact = torch.cat([contact, contact[-1:].expand(extra_pad, -1)], dim=0)
-    contact_pos = torch.cat(
-        [contact_pos, contact_pos[-1:].expand(extra_pad, *contact_pos.shape[1:])],
-        dim=0,
     )
 
     ref_data = (qpos_ref, qvel_ref, ctrl_ref, contact, contact_pos)
@@ -421,8 +409,9 @@ def main(config: Config):
 
     def _full_reset():
         ctx.boost_level = 0
-        ctx.revert_depth = 0
         ctx.revert_anchor_step = None
+        ctx.revert_anchor_checkpoint = None
+        ctx.revert_attempts_from_anchor = 0
         ctx.local_retries = 0
         _apply_boost(config, 0, orig_max_iters, orig_env_params_list, orig_noise_scale)
 
@@ -475,8 +464,8 @@ def main(config: Config):
                 )
                 if full_recovery:
                     loguru.logger.info(
-                        "Recovered after revert_depth={} at sim_step={}.",
-                        ctx.revert_depth,
+                        "Recovered after {} revert attempts at sim_step={}.",
+                        ctx.revert_attempts_from_anchor,
                         sim_step,
                     )
                     _full_reset()
@@ -511,13 +500,55 @@ def main(config: Config):
                 )
                 continue
 
-            elif ctx.revert_depth < config.max_revert_depth and ctx.history:
-                # --- REVERT ---
-                ctx.revert_depth += 1
+            elif (
+                ctx.state == _StepState.RECOVERING
+                and ctx.revert_anchor_checkpoint is not None
+            ):
+                # --- RE-REVERT to same anchor ---
+                ctx.revert_attempts_from_anchor += 1
+                if ctx.revert_attempts_from_anchor > config.max_revert_depth:
+                    loguru.logger.error(
+                        "Exhausted {} revert attempts from anchor sim_step={}.",
+                        config.max_revert_depth,
+                        ctx.revert_anchor_step,
+                    )
+                    _apply_boost(
+                        config,
+                        0,
+                        orig_max_iters,
+                        orig_env_params_list,
+                        orig_noise_scale,
+                    )
+                    _truncate_to_latest_commit()
+                    sim_step = _replay_and_advance(sim_step, infos)
+                    ctx.state = _StepState.DONE
+                    break
+                ctx.local_retries = 0
+                _load_checkpoint(ctx.revert_anchor_checkpoint)
+                ctx.boost_level += 1
+                _apply_boost(
+                    config,
+                    ctx.boost_level,
+                    orig_max_iters,
+                    orig_env_params_list,
+                    orig_noise_scale,
+                )
+                loguru.logger.warning(
+                    "Re-revert attempt {}/{} back to anchor sim_step={}.",
+                    ctx.revert_attempts_from_anchor,
+                    config.max_revert_depth,
+                    ctx.revert_anchor_step,
+                )
+                continue
+
+            elif ctx.history:
+                # --- FIRST REVERT (from OPTIMIZE state) ---
                 ctx.local_retries = 0
                 prev_cp = ctx.history.pop()
+                ctx.revert_anchor_checkpoint = prev_cp
                 _load_checkpoint(prev_cp)
                 ctx.revert_anchor_step = int(np.round(mj_data.time / config.sim_dt))
+                ctx.revert_attempts_from_anchor = 1
                 ctx.boost_level += 1
                 _apply_boost(
                     config,
@@ -528,8 +559,7 @@ def main(config: Config):
                 )
                 ctx.state = _StepState.RECOVERING
                 loguru.logger.warning(
-                    "Revert depth {}/{} from sim_step={} to sim_step={}.",
-                    ctx.revert_depth,
+                    "Revert attempt 1/{} from sim_step={} to anchor sim_step={}.",
                     config.max_revert_depth,
                     sim_step,
                     ctx.revert_anchor_step,
@@ -537,16 +567,16 @@ def main(config: Config):
                 continue
 
             else:
-                # --- DONE (unrecoverable) ---
+                # --- DONE (no history to revert to) ---
                 loguru.logger.error(
-                    "Unrecoverable failure at sim_step={} (revert_depth={}).",
+                    "Unrecoverable failure at sim_step={} (no history).",
                     sim_step,
-                    ctx.revert_depth,
                 )
                 _apply_boost(
                     config, 0, orig_max_iters, orig_env_params_list, orig_noise_scale
                 )
                 _truncate_to_latest_commit()
+                sim_step = _replay_and_advance(sim_step, infos)
                 ctx.state = _StepState.DONE
                 break
 
