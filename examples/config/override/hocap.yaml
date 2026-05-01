@@ -1,0 +1,21 @@
+# @package _global_
+# Override configuration for hocap dataset
+dataset_name: hocap
+robot_type: allegro
+embodiment_type: right
+task: subject_1-20231025_170231-G10_1
+temperature: 1.0
+data_id: 540
+ctrl_dt: 1.5
+knot_dt: 0.5
+horizon: 3.0
+first_ctrl_noise_scale: 1.0
+last_ctrl_noise_scale: 2.0
+improvement_threshold: 0.01
+improvement_check_steps: 2
+base_pos_rew_scale: 0.1
+base_rot_rew_scale: 0.03
+joint_noise_scale: 0.03
+pos_noise_scale: 0.03
+rot_noise_scale: 0.01
+final_noise_scale: 0.01

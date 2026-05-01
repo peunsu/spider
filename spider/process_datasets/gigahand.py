@@ -385,7 +385,7 @@ def main(
     """Process gigahand dataset to our target format."""
     # Resolve dataset paths
     dataset_dir = os.path.abspath(dataset_dir)
-    gigahand_path = Path(dataset_dir) / "raw" / "gigahand"
+    hocap_path = Path(dataset_dir) / "raw" / "hocap"
     # Compose identifiers
     task_id = f"{participant}-{scene}-{sequence_id}"
     try:
@@ -394,11 +394,11 @@ def main(
         data_id = 0
     if use_example_dataset:
         object_pose_path = (
-            gigahand_path / "object_poses" / task_id / "pose" / "optimized_pose.json"
+            hocap_path / "object_poses" / task_id / "pose" / "optimized_pose.json"
         )
     else:
         object_pose_path = (
-            gigahand_path
+            hocap_path
             / "objectposes"
             / scene_name
             / object_name
@@ -408,9 +408,9 @@ def main(
         )
     # task_name: before the second "-"
     if use_example_dataset:
-        hand_pose_path = gigahand_path / "hand_poses" / task_id
+        hand_pose_path = hocap_path / "hand_poses" / task_id
     else:
-        hand_pose_path = gigahand_path / "handposes" / f"{participant}-{scene}"
+        hand_pose_path = hocap_path / "handposes" / f"{participant}-{scene}"
     keypoints3d_path = hand_pose_path / "keypoints_3d" / sequence_id[1:]
     mano_main_path = hand_pose_path / "params" / f"{sequence_id[1:]}.json"
 
@@ -471,11 +471,11 @@ def main(
     # for trajectory compensation, so we compute it here first
     if use_example_dataset:
         mesh_path_for_centroid = (
-            gigahand_path / "object_poses" / task_id / "pose" / "transform_mesh.obj"
+            hocap_path / "object_poses" / task_id / "pose" / "transform_mesh.obj"
         )
         mesh_path_for_centroid = str(mesh_path_for_centroid)
     else:
-        mesh_pattern_for_centroid = f"{gigahand_path}/object_meshes/publish/{scene_name}/{object_name}/{object_name.split('_')[0]}.obj"
+        mesh_pattern_for_centroid = f"{hocap_path}/object_meshes/publish/{scene_name}/{object_name}/{object_name.split('_')[0]}.obj"
         mesh_matches_for_centroid = glob.glob(mesh_pattern_for_centroid)
         if not mesh_matches_for_centroid:
             raise FileNotFoundError(
@@ -579,7 +579,7 @@ def main(
         task = f"{participant}@{scene}@{scene_name}@{object_name}@{sequence_id}"
     task_info = {
         "task": task,
-        "dataset_name": "gigahand",
+        "dataset_name": "hocap",
         "robot_type": "mano",
         "embodiment_type": embodiment_type,
         "data_id": data_id,
@@ -591,11 +591,11 @@ def main(
     # Read right object mesh and convert to standardized location
     if use_example_dataset:
         right_obj_mesh_path = (
-            gigahand_path / "object_poses" / task_id / "pose" / "transform_mesh.obj"
+            hocap_path / "object_poses" / task_id / "pose" / "transform_mesh.obj"
         )
         right_obj_mesh_path = str(right_obj_mesh_path)
     else:
-        right_obj_mesh_pattern = f"{gigahand_path}/object_meshes/publish/{scene_name}/{object_name}/{object_name.split('_')[0]}.obj"
+        right_obj_mesh_pattern = f"{hocap_path}/object_meshes/publish/{scene_name}/{object_name}/{object_name.split('_')[0]}.obj"
         right_obj_mesh_matches = glob.glob(right_obj_mesh_pattern)
         if not right_obj_mesh_matches:
             raise FileNotFoundError(
@@ -611,7 +611,7 @@ def main(
         right_object_name = object_name
     mesh_dir = get_mesh_dir(
         dataset_dir=dataset_dir,
-        dataset_name="gigahand",
+        dataset_name="hocap",
         object_name=right_object_name,
     )
 
@@ -641,7 +641,7 @@ def main(
     # persist
     output_dir = get_processed_data_dir(
         dataset_dir=dataset_dir,
-        dataset_name="gigahand",
+        dataset_name="hocap",
         robot_type="mano",
         embodiment_type=embodiment_type,
         task=task,

@@ -47,6 +47,7 @@ from spider.simulators.dexmachina import (
 )
 from spider.viewers import setup_viewer, update_viewer
 
+torch.serialization.add_safe_globals([np.core.multiarray._reconstruct, np.ndarray, np.dtype])
 
 def main(config: Config):
     """Run the SPIDER using Genesis (DexMachina) backend"""

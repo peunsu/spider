@@ -1,7 +1,7 @@
 """Run IK for the given hand type and mode.
 
 This is a simplified version of IK based on mink.
-No act scene, open-hand, or contact support.
+No open-hand or contact support.
 
 Input: mujoco scene xml file + hand keypoints + object trajectories.
 Output: npz file which contains qpos for key frames in xml.
@@ -23,6 +23,7 @@ import loguru
 import mink
 import mujoco
 import numpy as np
+from scipy.spatial.transform import Rotation
 import tyro
 from loop_rate_limiters import RateLimiter
 
@@ -52,6 +53,7 @@ def main(
     finger_init_steps: int = 300,
     average_frame_size: int = 3,
     z_offset: float = 0.0,
+    act_scene: bool = False,
 ):
     # Resolve directories
     dataset_dir = os.path.abspath(dataset_dir)
@@ -72,10 +74,22 @@ def main(
         data_id=data_id,
     )
     os.makedirs(processed_dir_robot, exist_ok=True)
-    model_path = f"{processed_dir_robot}/../scene.xml"
+    model_path = (
+        f"{processed_dir_robot}/../scene_act.xml"
+        if act_scene
+        else f"{processed_dir_robot}/../scene.xml"
+    )
 
     # Load reference keypoints
     file_path = f"{processed_dir_mano}/trajectory_keypoints.npz"
+    def _ensure_quat_continuity(arr):
+        """Flip quaternion signs so consecutive frames stay in the same hemisphere."""
+        out = arr.copy()
+        for i in range(1, len(out)):
+            if np.dot(out[i], out[i - 1]) < 0:
+                out[i] = -out[i]
+        return out
+
     loaded_data = np.load(file_path)
     qpos_finger_right = loaded_data["qpos_finger_right"][start_idx:end_idx]
     qpos_finger_left = loaded_data["qpos_finger_left"][start_idx:end_idx]
@@ -83,6 +97,49 @@ def main(
     qpos_wrist_left = loaded_data["qpos_wrist_left"][start_idx:end_idx]
     qpos_obj_right = loaded_data["qpos_obj_right"][start_idx:end_idx]
     qpos_obj_left = loaded_data["qpos_obj_left"][start_idx:end_idx]
+
+    # Enforce sign continuity: q and -q are the same rotation, but a sign flip
+    # between frames causes Rotation.as_euler() to jump by ~180 degrees.
+    qpos_wrist_right[:, 3:] = _ensure_quat_continuity(qpos_wrist_right[:, 3:])
+    qpos_wrist_left[:, 3:] = _ensure_quat_continuity(qpos_wrist_left[:, 3:])
+    qpos_obj_right[:, 3:] = _ensure_quat_continuity(qpos_obj_right[:, 3:])
+    qpos_obj_left[:, 3:] = _ensure_quat_continuity(qpos_obj_left[:, 3:])
+    for j in range(qpos_finger_right.shape[1]):
+        qpos_finger_right[:, j, 3:] = _ensure_quat_continuity(qpos_finger_right[:, j, 3:])
+        qpos_finger_left[:, j, 3:] = _ensure_quat_continuity(qpos_finger_left[:, j, 3:])
+    try:
+        contact_left = loaded_data["contact_left"][start_idx:end_idx]
+        contact_right = loaded_data["contact_right"][start_idx:end_idx]
+    except KeyError:
+        try:
+            # Some datasets store combined contact as single "contact" key (N, 10)
+            contact_combined = loaded_data["contact"][start_idx:end_idx]
+            contact_right = contact_combined[:, :5]
+            contact_left = contact_combined[:, 5:]
+        except KeyError:
+            loguru.logger.warning("No contact data found, using all ones")
+            contact_left = np.ones((qpos_finger_right.shape[0], 5))
+            contact_right = np.ones((qpos_finger_left.shape[0], 5))
+
+    try:
+        # Static contact positions are not frame-indexed; load without start/end slicing
+        contact_pos_right = loaded_data["contact_pos_right"]
+        contact_pos_left = loaded_data["contact_pos_left"]
+    except KeyError:
+        loguru.logger.warning("No contact_pos data found, using zero contact positions")
+        contact_pos_right = np.zeros((10, 3))
+        contact_pos_left = np.zeros((10, 3))
+
+    contact_ref = np.concatenate([contact_right, contact_left], axis=1)
+    contact_ref = contact_ref.astype(np.float32)
+    contact_ref[:, :] = np.any(contact_ref, axis=-1, keepdims=True)
+
+    if contact_pos_right.ndim == 3:
+        # Per-frame contact positions: concatenate right + left → (N, 10, 3)
+        contact_pos_ref = np.concatenate([contact_pos_right, contact_pos_left], axis=1)
+    else:
+        # Static contact positions (M, 3): use right as-is, covers all contacts
+        contact_pos_ref = contact_pos_right
 
     # Build reference array: (H, num_sites, 7) where 7 = [x, y, z, qw, qx, qy, qz]
     qpos_ref = np.concatenate(
@@ -120,8 +177,31 @@ def main(
     # Load model
     model = mujoco.MjModel.from_xml_path(model_path)
 
+    object_qpos_addrs = {}
+    if act_scene:
+        for side in ["right", "left"]:
+            joint_names = [
+                f"{side}_object_pos_x",
+                f"{side}_object_pos_y",
+                f"{side}_object_pos_z",
+                f"{side}_object_rot_x",
+                f"{side}_object_rot_y",
+                f"{side}_object_rot_z",
+            ]
+            try:
+                object_qpos_addrs[side] = [
+                    model.jnt_qposadr[
+                        mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+                    ]
+                    for name in joint_names
+                ]
+            except ValueError:
+                continue
+
     # Object DOF count
-    if embodiment_type == "bimanual":
+    if act_scene:
+        nq_obj = 0
+    elif embodiment_type == "bimanual":
         nq_obj = 14
     elif embodiment_type in ["right", "left"]:
         nq_obj = 7
@@ -181,13 +261,23 @@ def main(
 
     # -- Helpers --
     def set_object_qpos(t):
+        def set_object_side(side: str, qpos_obj: np.ndarray):
+            qpos_addrs = object_qpos_addrs.get(side)
+            if qpos_addrs is not None:
+                data.qpos[qpos_addrs[:3]] = qpos_obj[:3]
+                data.qpos[qpos_addrs[3:]] = Rotation.from_quat(
+                    qpos_obj[3:][[1, 2, 3, 0]]
+                ).as_euler("XYZ", degrees=False)
+            else:
+                data.qpos[-7:] = qpos_obj
+
         if embodiment_type == "bimanual":
-            data.qpos[-14:-7] = qpos_ref[t, ref_idx["right_object"]]
-            data.qpos[-7:] = qpos_ref[t, ref_idx["left_object"]]
+            set_object_side("right", qpos_ref[t, ref_idx["right_object"]])
+            set_object_side("left", qpos_ref[t, ref_idx["left_object"]])
         elif embodiment_type == "right":
-            data.qpos[-7:] = qpos_ref[t, ref_idx["right_object"]]
+            set_object_side("right", qpos_ref[t, ref_idx["right_object"]])
         elif embodiment_type == "left":
-            data.qpos[-7:] = qpos_ref[t, ref_idx["left_object"]]
+            set_object_side("left", qpos_ref[t, ref_idx["left_object"]])
 
     def set_wrist_targets(t):
         for wrist_task, site_name in zip(wrist_tasks, wrist_sites, strict=True):
@@ -225,6 +315,8 @@ def main(
     loguru.logger.info(f"Running IK for {num_frames} frames...")
     qpos_list = []
     images = []
+
+    file_suffix = "_act" if act_scene else ""
 
     if save_video:
         import imageio
@@ -267,6 +359,15 @@ def main(
 
     qpos_list = np.array(qpos_list)
 
+    # Unwrap object Euler angles before moving average.
+    # set_object_qpos uses Rotation.as_euler() which can produce ±2π jumps at
+    # angle boundaries. Moving average with window=3 smears a single 2π jump
+    # into three consecutive 2π/3 jumps, which np.unwrap (discont=π) can no
+    # longer detect. Unwrapping first eliminates the source jump entirely.
+    if act_scene:
+        for dim in range(-3, 0):
+            qpos_list[:, dim] = np.unwrap(qpos_list[:, dim])
+
     # -- Post-processing: moving average filter --
     def moving_average_filter(signal_data, window_size=5):
         return np.convolve(
@@ -280,6 +381,8 @@ def main(
         filtered[:, i] = moving_average_filter(qpos_list[:, i], average_frame_size)
     qpos_list = filtered
 
+    contact_list = contact_ref.astype(np.float32)
+
     # -- Compute qvel via finite differences --
     n_filtered = qpos_list.shape[0]
     qvel_list = np.zeros((n_filtered - 1, model.nv))
@@ -288,7 +391,16 @@ def main(
             model, qvel_list[i - 1], ref_dt, qpos_list[i - 1], qpos_list[i]
         )
     qpos_list = qpos_list[1:]
+    contact_list = contact_list[1:]
     assert qpos_list.shape[0] == qvel_list.shape[0]
+
+    contact_pos_list = np.asarray(contact_pos_ref, dtype=np.float32)
+    if contact_pos_list.ndim == 2:
+        contact_pos_list = np.repeat(
+            contact_pos_list[None, :, :], qpos_list.shape[0], axis=0
+        )
+    else:
+        contact_pos_list = contact_pos_list[: qpos_list.shape[0]]
 
     # -- Forward rollout for validation --
     mj_data_rollout = mujoco.MjData(model)
@@ -317,15 +429,22 @@ def main(
     if save_video:
         import imageio
 
-        video_path = f"{file_dir}/visualization_ik.mp4"
+        video_path = f"{file_dir}/visualization_ik{file_suffix}.mp4"
         imageio.mimsave(video_path, images, fps=int(1 / ref_dt))
         loguru.logger.info(f"Saved video to {video_path}")
 
-    out_npz = f"{file_dir}/trajectory_kinematic.npz"
-    np.savez(out_npz, qpos=qpos_list, qvel=qvel_list, frequency=1 / ref_dt)
+    out_npz = f"{file_dir}/trajectory_kinematic{file_suffix}.npz"
+    np.savez(
+        out_npz,
+        qpos=qpos_list,
+        qvel=qvel_list,
+        contact=contact_list,
+        contact_pos=contact_pos_list,
+        frequency=1 / ref_dt,
+    )
     loguru.logger.info(f"Saved {out_npz}")
 
-    out_npz = f"{file_dir}/trajectory_ikrollout.npz"
+    out_npz = f"{file_dir}/trajectory_ikrollout{file_suffix}.npz"
     np.savez(out_npz, qpos=qpos_rollout)
     loguru.logger.info(f"Saved {out_npz}")
 
