@@ -6,13 +6,12 @@
   </option>
 
   <default>
-    <position dampratio="1.0"/>
+    <geom density="800" condim="1" contype="0" conaffinity="0"/>
+    <position kp="300" dampratio="1.0"/>
+    <joint damping="0.0" armature="1.0" axis="1 0 0" frictionloss="0.0"/>
+    <site size="0.005" type="sphere" rgba="1 0 0 1" group="3"/>
+    
     <default class="right_hand">
-      <geom density="800" condim="1" contype="0" conaffinity="0"/>
-      <position kp="300" dampratio="1.0"/>
-      <joint damping="0.0" armature="1.0" axis="1 0 0" frictionloss="0.0"/>
-      <site size="0.005" type="sphere" rgba="1 0 0 1" group="3"/>
-
       <mesh scale="0.001 0.001 0.001"/>
 
       <!-- <default class="wrist">
@@ -30,11 +29,11 @@
       <default class="thumb">
         <default class="thbase">
           <joint axis="0 0 -1" range="-1.0472 1.0472"/>
-          <position ctrlrange="-1.0472 1.0472" forcerange="-3 3"/>
+          <position ctrlrange="-1.0472 1.0472"/>
         </default>
         <default class="thproximal">
           <joint range="0 1.22173"/>
-          <position ctrlrange="0 1.22173" forcerange="-2 2"/>
+          <position ctrlrange="0 1.22173"/>
         </default>
         <default class="thhub">
           <joint range="-0.20944 0.20944"/>
@@ -86,14 +85,14 @@
   </visual>
 
   <asset>
-    <texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="1 1 1" width="512"
+    <texture type="skybox" builtin="gradient" rgb1="1.0 1.0 1.0" rgb2="1.0 1.0 1.0" width="512"
       height="3072" />
-    <texture type="2d" name="right_groundplane" builtin="checker" mark="edge" rgb1="1 1 1"
-      rgb2="1 1 1"
-      markrgb="1 1 1" width="300" height="300" />
+    <texture type="2d" name="right_groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4"
+      rgb2="0.1 0.2 0.3"
+      markrgb="0.8 0.8 0.8" width="300" height="300" />
     <material name="right_groundplane" texture="right_groundplane" texuniform="true"
       texrepeat="5 5"
-      reflectance="1" />
+      reflectance="0.2" />
 
     <material name="black" specular="0.5" shininess="0.25" rgba="0.16355 0.16355 0.16355 1"/>
     <material name="gray" specular="0.0" shininess="0.25" rgba="0.80848 0.80848 0.80848 1"/>
@@ -117,23 +116,16 @@
   <worldbody>
     <light pos="0 0 3.5" dir="0 0 -1" directional="false"/>
     <body name="right_forearm" childclass="right_hand" quat="0 1 0 1" gravcomp="1">
-      <inertial mass="3" pos="0 0 0.09" diaginertia="0.0138 0.0138 0.00744"/>
+      <!-- <inertial mass="3" pos="0 0 0.09" diaginertia="0.0138 0.0138 0.00744"/>
       <geom name="right_forearm_0_visual" class="plastic_visual" mesh="forearm_0" material="gray" group="1"/>
-      <geom name="right_forearm_1_visual" class="plastic_visual" mesh="forearm_1" group="1"/>
+      <geom name="right_forearm_1_visual" class="plastic_visual" mesh="forearm_1" group="1"/> -->
       <!-- <geom name="collision_hand_right_forearm_0" class="plastic_collision" type="mesh"
         mesh="forearm_collision"/> -->
-      <geom name="collision_hand_right_forearm_1" class="plastic_collision" size="0.035 0.035 0.035"
-        pos="0.01 0.0 0.181" quat="0.380188 0.924909 0 0" type="box"/>
-
-      <joint name="right_pos_x" type="slide" axis="1 0 0" range="-1.0 1.0"/>
-      <joint name="right_pos_y" type="slide" axis="0 1 0" range="-1.0 1.0"/>
-      <joint name="right_pos_z" type="slide" axis="0 0 1" range="-1.0 1.0"/>
-      <joint name="right_rot_x" type="hinge" axis="1 0 0" range="-6.28 6.28"/>
-      <joint name="right_rot_y" type="hinge" axis="0 1 0" range="-6.28 6.28"/>
-      <joint name="right_rot_z" type="hinge" axis="0 0 1" range="-6.28 6.28"/>
+      <!-- <geom name="collision_hand_right_forearm_1" class="plastic_collision" size="0.035 0.035 0.035"
+        pos="0.01 0.0 0.181" quat="0.380188 0.924909 0 0" type="box"/> -->
 
       <body name="right_wrist" pos="0.01 0 0.21301" quat="1 0 0 1">
-        <inertial mass="0.1" pos="0 0 0.029" quat="0.5 0.5 0.5 0.5"
+        <!-- <inertial mass="0.1" pos="0 0 0.029" quat="0.5 0.5 0.5 0.5"
           diaginertia="6.4e-05 4.38e-05 3.5e-05"/>
         <geom name="right_wrist_visual" class="plastic_visual" mesh="wrist" material="metallic" group="1"/>
         <geom name="collision_hand_right_wrist_0" size="0.0135 0.015" quat="0.499998 0.5 0.5 -0.500002" type="cylinder"
@@ -145,7 +137,15 @@
         <geom name="collision_hand_right_wrist_3" size="0.0135 0.009 0.005" pos="-0.021 0 0.011" quat="0.923879 0 0.382684 0"
           type="box" class="plastic_collision"/>
         <geom name="collision_hand_right_wrist_4" size="0.0135 0.009 0.005" pos="0.026 0 0.01" quat="0.923879 0 -0.382684 0"
-          type="box" class="plastic_collision"/>
+          type="box" class="plastic_collision"/> -->
+
+        <joint name="right_pos_x" type="slide" axis="1 0 0" range="-1.0 1.0"/>
+        <joint name="right_pos_y" type="slide" axis="0 1 0" range="-1.0 1.0"/>
+        <joint name="right_pos_z" type="slide" axis="0 0 1" range="-1.0 1.0"/>
+        <joint name="right_rot_x" type="hinge" axis="1 0 0" range="-6.28 6.28"/>
+        <joint name="right_rot_y" type="hinge" axis="0 1 0" range="-6.28 6.28"/>
+        <joint name="right_rot_z" type="hinge" axis="0 0 1" range="-6.28 6.28"/>
+        
         <body name="right_palm" pos="0 0 0.034">
           <inertial mass="0.3" pos="0 0 0.035" quat="1 0 0 1"
             diaginertia="0.0005287 0.0003581 0.000191"/>
