@@ -121,25 +121,28 @@ def main(
             contact_left = np.ones((qpos_finger_right.shape[0], 5))
             contact_right = np.ones((qpos_finger_left.shape[0], 5))
 
-    try:
-        # Static contact positions are not frame-indexed; load without start/end slicing
-        contact_pos_right = loaded_data["contact_pos_right"]
-        contact_pos_left = loaded_data["contact_pos_left"]
-    except KeyError:
-        loguru.logger.warning("No contact_pos data found, using zero contact positions")
-        contact_pos_right = np.zeros((10, 3))
-        contact_pos_left = np.zeros((10, 3))
-
-    contact_ref = np.concatenate([contact_right, contact_left], axis=1)
-    contact_ref = contact_ref.astype(np.float32)
-    contact_ref[:, :] = np.any(contact_ref, axis=-1, keepdims=True)
-
-    if contact_pos_right.ndim == 3:
-        # Per-frame contact positions: concatenate right + left → (N, 10, 3)
-        contact_pos_ref = np.concatenate([contact_pos_right, contact_pos_left], axis=1)
-    else:
-        # Static contact positions (M, 3): use right as-is, covers all contacts
-        contact_pos_ref = contact_pos_right
+    # Build ik.py-compatible contact structure: [hand_zeros | object_contact_values]
+    # contact_offset in run_mjwp = max(total_cols - contact_len, 0) skips the zero half
+    # and reads the per-finger values from the trailing half.
+    _nf = 5  # fingers per side
+    _cr = contact_right[:, :_nf].astype(np.float32)
+    _cl = contact_left[:, :_nf].astype(np.float32)
+    _N = _cr.shape[0]
+    if embodiment_type == "bimanual":
+        # [zeros(10) | right_5 | left_5] → (N, 20)
+        contact_ref = np.concatenate(
+            [np.zeros((_N, _nf * 2), dtype=np.float32), _cr, _cl], axis=1
+        )
+    elif embodiment_type == "right":
+        # [zeros(5) | right_5] → (N, 10)
+        contact_ref = np.concatenate(
+            [np.zeros((_N, _nf), dtype=np.float32), _cr], axis=1
+        )
+    else:  # left
+        # [zeros(5) | left_5] → (N, 10)
+        contact_ref = np.concatenate(
+            [np.zeros((_N, _nf), dtype=np.float32), _cl], axis=1
+        )
 
     # Build reference array: (H, num_sites, 7) where 7 = [x, y, z, qw, qx, qy, qz]
     qpos_ref = np.concatenate(
@@ -176,6 +179,19 @@ def main(
 
     # Load model
     model = mujoco.MjModel.from_xml_path(model_path)
+
+    # Contact site IDs for world-space position recording.
+    # Order matches config.build_hand_contact_site_ids: right then left, thumb→pinky.
+    _contact_finger_names = ["thumb_tip", "index_tip", "middle_tip", "ring_tip", "pinky_tip"]
+    _contact_sites_ordered = []
+    if embodiment_type in ["right", "bimanual"]:
+        _contact_sites_ordered.extend([f"right_{f}" for f in _contact_finger_names])
+    if embodiment_type in ["left", "bimanual"]:
+        _contact_sites_ordered.extend([f"left_{f}" for f in _contact_finger_names])
+    contact_site_ids = [
+        mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, s) for s in _contact_sites_ordered
+    ]
+    n_contact = len(_contact_sites_ordered)
 
     object_qpos_addrs = {}
     if act_scene:
@@ -314,6 +330,7 @@ def main(
     # -- Main IK loop --
     loguru.logger.info(f"Running IK for {num_frames} frames...")
     qpos_list = []
+    contact_pos_list = []
     images = []
 
     file_suffix = "_act" if act_scene else ""
@@ -344,13 +361,18 @@ def main(
 
             qpos_list.append(configuration.q.copy())
 
+            mujoco.mj_forward(model, data)
+            frame_contact_pos = np.zeros((n_contact, 3), dtype=np.float32)
+            for _i, _sid in enumerate(contact_site_ids):
+                if _sid != -1:
+                    frame_contact_pos[_i] = data.site_xpos[_sid]
+            contact_pos_list.append(frame_contact_pos)
+
             if save_video:
-                mujoco.mj_forward(model, data)
                 renderer.update_scene(data=data, camera="front")
                 images.append(renderer.render())
 
             if show_viewer:
-                mujoco.mj_forward(model, data)
                 gui.sync()
                 rate_limiter.sleep()
 
@@ -392,15 +414,8 @@ def main(
         )
     qpos_list = qpos_list[1:]
     contact_list = contact_list[1:]
+    contact_pos_list = np.array(contact_pos_list)[1:]
     assert qpos_list.shape[0] == qvel_list.shape[0]
-
-    contact_pos_list = np.asarray(contact_pos_ref, dtype=np.float32)
-    if contact_pos_list.ndim == 2:
-        contact_pos_list = np.repeat(
-            contact_pos_list[None, :, :], qpos_list.shape[0], axis=0
-        )
-    else:
-        contact_pos_list = contact_pos_list[: qpos_list.shape[0]]
 
     # -- Forward rollout for validation --
     mj_data_rollout = mujoco.MjData(model)
