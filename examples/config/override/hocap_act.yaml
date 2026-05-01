@@ -31,3 +31,5 @@ base_pos_rew_scale: 0.03
 base_rot_rew_scale: 0.03
 pos_rew_scale: 1.0
 rot_rew_scale: 1.0
+nconmax_per_env: 200 # max contacts per environment
+njmax_per_env: 500 # max joints per environment

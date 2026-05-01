@@ -280,7 +280,7 @@ def process_config(cfg, dataset_dir, embodiment_type="right", show_viewer=True):
         "data_id": data_id,
         "right_object_mesh_dir": str(Path(mesh_out).relative_to(dataset_dir)),
         "left_object_mesh_dir": None,
-        "ref_dt": 1 / 60,
+        "ref_dt": 0.02,
     }
 
     with open(f"{output_dir}/../task_info.json", "w") as f:

@@ -7,7 +7,7 @@ set -euo pipefail
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 HAND_TYPE="right"
-ROBOT_TYPE="shadow_hand"
+ROBOT_TYPE="inspire"
 DATASET_NAME="hocap"
 CONDA_ENV="spider"
 
@@ -32,17 +32,17 @@ conda activate "${CONDA_ENV}"
 echo ""
 
 # ── Step 0: Generate MANO trajectories ───────────────────────────────────────
-info "[0/N] Generating MANO trajectories via hocap.py ..."
-cd "${REPO_ROOT}"
-if python spider/process_datasets/hocap.py --dataset-dir "${DATASET_DIR}" > /tmp/spider_hocap.log 2>&1; then
-    ok "hocap.py"
-else
-    fail "hocap.py"
-    tail -10 /tmp/spider_hocap.log | sed 's/^/    /'
-    echo -e "${RED}Aborting: trajectory generation failed.${RESET}" >&2
-    exit 1
-fi
-echo ""
+# info "[0/N] Generating MANO trajectories via hocap.py ..."
+# cd "${REPO_ROOT}"
+# if python spider/process_datasets/hocap.py --dataset-dir "${DATASET_DIR}" > /tmp/spider_hocap.log 2>&1; then
+#     ok "hocap.py"
+# else
+#     fail "hocap.py"
+#     tail -10 /tmp/spider_hocap.log | sed 's/^/    /'
+#     echo -e "${RED}Aborting: trajectory generation failed.${RESET}" >&2
+#     exit 1
+# fi
+# echo ""
 
 # ── Discover trajectories ─────────────────────────────────────────────────────
 mapfile -t TRAJ_FILES < <(find "${MANO_DIR}" -name "trajectory_keypoints.npz" | sort)
