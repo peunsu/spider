@@ -8,7 +8,7 @@ temperature: 1.0
 num_samples: 1024
 first_ctrl_noise_scale: 1.0
 final_noise_scale: 0.3
-sim_dt: 0.005
+sim_dt: 0.01
 max_num_iterations: 32
 gibbs_sampling: false
 # guidance related
