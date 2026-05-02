@@ -1,0 +1,34 @@
+# @package _global_
+dataset_name: oakink1
+robot_type: allegro
+embodiment_type: right
+task: A01001-0001-0000
+temperature: 1.0
+num_samples: 1024
+first_ctrl_noise_scale: 1.0
+final_noise_scale: 0.3
+sim_dt: 0.01
+max_num_iterations: 32
+gibbs_sampling: false
+# guidance related
+improvement_threshold: 0.0
+contact_guidance: true
+guidance_decay_ratio: 0.8
+init_pos_actuator_gain: 10.0
+init_pos_actuator_bias: 10.0
+init_rot_actuator_gain: 0.3
+init_rot_actuator_bias: 0.3
+# with guidance, exploration noise can be higher
+joint_noise_scale: 0.02
+pos_noise_scale: 0.005
+rot_noise_scale: 0.01
+# with guidance, horizon can be shorter
+horizon: 0.4
+knot_dt: 0.1
+ctrl_dt: 0.05
+base_pos_rew_scale: 0.3
+base_rot_rew_scale: 0.3
+pos_rew_scale: 1.0
+rot_rew_scale: 1.0
+nconmax_per_env: 200 # max contacts per environment
+njmax_per_env: 500 # max joints per environment
