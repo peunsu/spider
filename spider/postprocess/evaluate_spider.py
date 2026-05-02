@@ -36,6 +36,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import warnings
@@ -67,7 +68,6 @@ def _geodesic_deg(R1: np.ndarray, R2: np.ndarray) -> np.ndarray:
     trace = np.trace(R_diff, axis1=-2, axis2=-1)
     cos_angle = np.clip((trace - 1.0) / 2.0, -1.0, 1.0)
     angle = np.arccos(cos_angle)
-    angle = np.minimum(angle, np.pi - angle)
     return np.degrees(angle)
 
 
@@ -198,16 +198,27 @@ def evaluate_one(
     # Resolve site and body IDs
     prefix = side
     try:
-        site_ids = {
-            "obj": mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SITE, f"{prefix}_object"),
-            "palm": mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SITE, f"{prefix}_palm"),
-            "thumb_tip": mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SITE, f"{prefix}_thumb_tip"),
-            "index_tip": mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SITE, f"{prefix}_index_tip"),
-            "middle_tip": mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SITE, f"{prefix}_middle_tip"),
-            "ring_tip": mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SITE, f"{prefix}_ring_tip"),
-            "pinky_tip": mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SITE, f"{prefix}_pinky_tip"),
+        site_names = {
+            "obj": f"{prefix}_object",
+            "palm": f"{prefix}_palm",
+            "thumb_tip": f"{prefix}_thumb_tip",
+            "index_tip": f"{prefix}_index_tip",
+            "middle_tip": f"{prefix}_middle_tip",
+            "ring_tip": f"{prefix}_ring_tip",
+            "pinky_tip": f"{prefix}_pinky_tip",
         }
+        site_ids = {
+            k: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SITE, v)
+            for k, v in site_names.items()
+        }
+        missing = [site_names[k] for k, v in site_ids.items() if v == -1]
+        if missing:
+            warnings.warn(f"Sites not found in {xml_path}: {missing}")
+            return None
         obj_body_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f"{prefix}_object")
+        if obj_body_id == -1:
+            warnings.warn(f"Body '{prefix}_object' not found in {xml_path}")
+            return None
     except Exception as e:
         warnings.warn(f"Failed to resolve site/body IDs: {e}")
         return None
@@ -462,6 +473,7 @@ def main() -> None:
         help="Fingertip position threshold for success rate (meters)",
     )
     parser.add_argument("--output", default=None, help="Optional path to save JSON results")
+    parser.add_argument("--csv", default=None, help="Optional path to save CSV results (per-trajectory rows + summary)")
     args = parser.parse_args()
 
     base_dir = os.path.abspath(args.base_dir)
@@ -558,6 +570,84 @@ def main() -> None:
                 default=str,
             )
         print(f"\nSaved results to {out_path}")
+
+    if args.csv:
+        csv_path = os.path.abspath(args.csv)
+        os.makedirs(os.path.dirname(csv_path) or ".", exist_ok=True)
+        valid = [r for r in results if r.get("e_t") is not None]
+        fieldnames = ["task", "data_id", "et_cm", "er_deg", "ej_cm", "eft_cm", "n_frames", "success"]
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for r in results:
+                if r.get("e_t") is not None:
+                    ok = (
+                        r["e_t"] < args.et_threshold
+                        and r["e_r"] < args.er_threshold
+                        and r["e_j"] < args.ej_threshold
+                        and r["e_ft"] < args.eft_threshold
+                    )
+                    success_val = "1" if ok else "0"
+                else:
+                    success_val = ""
+                writer.writerow({
+                    "task": r["task"],
+                    "data_id": r["data_id"],
+                    "et_cm": f"{r['e_t']*100:.4f}" if r.get("e_t") is not None else "",
+                    "er_deg": f"{r['e_r']:.4f}" if r.get("e_r") is not None else "",
+                    "ej_cm": f"{r['e_j']*100:.4f}" if r.get("e_j") is not None else "",
+                    "eft_cm": f"{r['e_ft']*100:.4f}" if r.get("e_ft") is not None else "",
+                    "n_frames": r.get("n_frames", 0),
+                    "success": success_val,
+                })
+            if valid:
+                et_vals = [r["e_t"] for r in valid]
+                er_vals = [r["e_r"] for r in valid]
+                ej_vals = [r["e_j"] for r in valid]
+                eft_vals = [r["e_ft"] for r in valid]
+                writer.writerow({
+                    "task": "MEAN",
+                    "data_id": "",
+                    "et_cm": f"{np.mean(et_vals)*100:.4f}",
+                    "er_deg": f"{np.mean(er_vals):.4f}",
+                    "ej_cm": f"{np.mean(ej_vals)*100:.4f}",
+                    "eft_cm": f"{np.mean(eft_vals)*100:.4f}",
+                    "n_frames": sum(r.get("n_frames", 0) for r in valid),
+                    "success": "",
+                })
+                writer.writerow({
+                    "task": "STD",
+                    "data_id": "",
+                    "et_cm": f"{np.std(et_vals)*100:.4f}",
+                    "er_deg": f"{np.std(er_vals):.4f}",
+                    "ej_cm": f"{np.std(ej_vals)*100:.4f}",
+                    "eft_cm": f"{np.std(eft_vals)*100:.4f}",
+                    "n_frames": "",
+                    "success": "",
+                })
+                n_t = sum(1 for v in et_vals if v < args.et_threshold)
+                n_r = sum(1 for v in er_vals if v < args.er_threshold)
+                n_j = sum(1 for v in ej_vals if v < args.ej_threshold)
+                n_ft = sum(1 for v in eft_vals if v < args.eft_threshold)
+                n_all = sum(
+                    1
+                    for et, er, ej, eft in zip(et_vals, er_vals, ej_vals, eft_vals)
+                    if et < args.et_threshold
+                    and er < args.er_threshold
+                    and ej < args.ej_threshold
+                    and eft < args.eft_threshold
+                )
+                writer.writerow({
+                    "task": "SR",
+                    "data_id": "",
+                    "et_cm": f"{n_t/len(valid)*100:.1f}%",
+                    "er_deg": f"{n_r/len(valid)*100:.1f}%",
+                    "ej_cm": f"{n_j/len(valid)*100:.1f}%",
+                    "eft_cm": f"{n_ft/len(valid)*100:.1f}%",
+                    "n_frames": len(valid),
+                    "success": f"{n_all/len(valid)*100:.1f}%",
+                })
+        print(f"Saved CSV to {csv_path}")
 
 
 if __name__ == "__main__":
