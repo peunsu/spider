@@ -192,7 +192,6 @@ def process_sequence(
         obj_trans = moving_average_filter(obj_T_w_o[:, :3, 3], window_size=5)
         obj_T_w_o[:, :3, 3] = obj_trans
 
-    # OakInk world space → SPIDER sim space (Z-up → Y-up with 90° pitch)
     r_global = Rotation.from_euler("xyz", [0, 0, 0])
 
     qpos_wrist_right = np.zeros((N, 7))
