@@ -112,7 +112,7 @@ run_pipeline() {
     cd "${REPO_ROOT}"
 
     run_step decompose  "${task}" "${data_id}" \
-        python spider/preprocess/decompose_fast.py "${base_args[@]}" || { _skip_rest "${task}" "${data_id}"; return; }
+        python spider/preprocess/decompose.py "${base_args[@]}" || { _skip_rest "${task}" "${data_id}"; return; }
 
     run_step contact    "${task}" "${data_id}" \
         python spider/preprocess/detect_contact.py "${base_args[@]}" --no-show-viewer || { _skip_rest "${task}" "${data_id}"; return; }
@@ -121,7 +121,7 @@ run_pipeline() {
         python spider/preprocess/generate_xml.py "${robot_args[@]}" --no-show-viewer --act-scene --hand_floor_collision || { _skip_rest "${task}" "${data_id}"; return; }
 
     run_step ik         "${task}" "${data_id}" \
-        python spider/preprocess/ik_fast.py "${robot_args[@]}" --no-show-viewer --act-scene || { _skip_rest "${task}" "${data_id}"; return; }
+        python spider/preprocess/ik_fast.py "${robot_args[@]}" --no-show-viewer --act-scene --wrist-ori-cost 1.0 || { _skip_rest "${task}" "${data_id}"; return; }
 
     run_step_verbose retarget "${task}" "${data_id}" \
         python examples/run_mjwp.py \
@@ -146,6 +146,13 @@ for i in "${!TASKS[@]}"; do
     task="${TASKS[$i]}"
     data_id="${DATA_IDS[$i]}"
     idx=$((i + 1))
+
+    # If task name is not started with "S", skip (already processed)
+    # if [[ ! "$task" =~ ^S ]]; then
+    #     echo -e "${YELLOW}Skipping [${idx}/${TOTAL}] ${task} data_id=${data_id} (already processed)${RESET}"
+    #     _skip_rest "${task}" "${data_id}"
+    #     continue
+    # fi
 
     echo -e "${BOLD}[${idx}/${TOTAL}]${RESET} ${task}  data_id=${data_id}"
     run_pipeline "${task}" "${data_id}"

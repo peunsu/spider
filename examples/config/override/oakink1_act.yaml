@@ -13,21 +13,21 @@ gibbs_sampling: false
 # guidance related
 improvement_threshold: 0.0
 contact_guidance: true
-guidance_decay_ratio: 0.8
-init_pos_actuator_gain: 10.0
-init_pos_actuator_bias: 10.0
+guidance_decay_ratio: 0.5
+init_pos_actuator_gain: 2.0
+init_pos_actuator_bias: 2.0
 init_rot_actuator_gain: 0.3
 init_rot_actuator_bias: 0.3
 # with guidance, exploration noise can be higher
-joint_noise_scale: 0.02
-pos_noise_scale: 0.005
+joint_noise_scale: 0.15
+pos_noise_scale: 0.01
 rot_noise_scale: 0.01
 # with guidance, horizon can be shorter
-horizon: 0.4
-knot_dt: 0.1
-ctrl_dt: 0.05
-base_pos_rew_scale: 0.3
-base_rot_rew_scale: 0.3
+horizon: 1.6
+knot_dt: 0.4
+ctrl_dt: 0.2
+base_pos_rew_scale: 0.03
+base_rot_rew_scale: 0.03
 pos_rew_scale: 1.0
 rot_rew_scale: 1.0
 nconmax_per_env: 200 # max contacts per environment

@@ -32,17 +32,17 @@ conda activate "${CONDA_ENV}"
 echo ""
 
 # ── Step 0: Generate MANO trajectories ───────────────────────────────────────
-info "[0/N] Generating MANO trajectories via oakink1.py ..."
-cd "${REPO_ROOT}"
-if python spider/process_datasets/oakink1.py --dataset-dir "${DATASET_DIR}" > /tmp/spider_oakink1.log 2>&1; then
-    ok "oakink1.py"
-else
-    fail "oakink1.py"
-    tail -10 /tmp/spider_oakink1.log | sed 's/^/    /'
-    echo -e "${RED}Aborting: trajectory generation failed.${RESET}" >&2
-    exit 1
-fi
-echo ""
+# info "[0/N] Generating MANO trajectories via oakink1.py ..."
+# cd "${REPO_ROOT}"
+# if python spider/process_datasets/oakink1.py --dataset-dir "${DATASET_DIR}" > /tmp/spider_oakink1.log 2>&1; then
+#     ok "oakink1.py"
+# else
+#     fail "oakink1.py"
+#     tail -10 /tmp/spider_oakink1.log | sed 's/^/    /'
+#     echo -e "${RED}Aborting: trajectory generation failed.${RESET}" >&2
+#     exit 1
+# fi
+# echo ""
 
 # ── Discover trajectories ─────────────────────────────────────────────────────
 mapfile -t TRAJ_FILES < <(find "${MANO_DIR}" -name "trajectory_keypoints.npz" | sort)
@@ -112,7 +112,7 @@ run_pipeline() {
     cd "${REPO_ROOT}"
 
     run_step decompose  "${task}" "${data_id}" \
-        python spider/preprocess/decompose_fast.py "${base_args[@]}" || { _skip_rest "${task}" "${data_id}"; return; }
+        python spider/preprocess/decompose.py "${base_args[@]}" || { _skip_rest "${task}" "${data_id}"; return; }
 
     run_step contact    "${task}" "${data_id}" \
         python spider/preprocess/detect_contact.py "${base_args[@]}" --no-show-viewer || { _skip_rest "${task}" "${data_id}"; return; }
@@ -146,6 +146,13 @@ for i in "${!TASKS[@]}"; do
     task="${TASKS[$i]}"
     data_id="${DATA_IDS[$i]}"
     idx=$((i + 1))
+
+    # If task name is not started with "S", skip (already processed)
+    # if [[ ! "$task" =~ ^S ]]; then
+    #     echo -e "${YELLOW}Skipping [${idx}/${TOTAL}] ${task} data_id=${data_id} (already processed)${RESET}"
+    #     _skip_rest "${task}" "${data_id}"
+    #     continue
+    # fi
 
     echo -e "${BOLD}[${idx}/${TOTAL}]${RESET} ${task}  data_id=${data_id}"
     run_pipeline "${task}" "${data_id}"
