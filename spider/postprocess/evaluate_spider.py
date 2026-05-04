@@ -1,9 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
 """Evaluate SPIDER retargeted trajectories using ManipTrans-style metrics.
 
 Compares retargeted robot trajectories against MANO ground-truth keypoints
@@ -31,6 +25,7 @@ Usage:
         --et-threshold 0.10 \\
         --er-threshold 30.0 \\
         --output results.json
+        --csv results.csv
 """
 
 from __future__ import annotations
